@@ -7,19 +7,31 @@ import { Send, Trash2, Loader2, Bot } from "lucide-react";
 import ChatMessage, { MessageType } from "@/components/ChatMessage";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "@/lib/utils";
+import SettingsDialog from "@/components/SettingsDialog";
 
-const N8N_WEBHOOK_URL = "https://n8n.opensource-technology.com/webhook-test/6b89a398-7b90-4bc3-80c1-8401dc8a5c40";
+// Default webhook URL
+const DEFAULT_WEBHOOK_URL = "https://n8n.opensource-technology.com/webhook-test/6b89a398-7b90-4bc3-80c1-8401dc8a5c40";
 
 const Chat = () => {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState(() => {
+    // Try to get saved URL from localStorage
+    const savedUrl = localStorage.getItem("webhookUrl");
+    return savedUrl || DEFAULT_WEBHOOK_URL;
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Scroll to bottom of chat when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Save webhook URL to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem("webhookUrl", webhookUrl);
+  }, [webhookUrl]);
 
   const handleSendMessage = async () => {
     if (!input.trim()) return;
@@ -37,7 +49,7 @@ const Chat = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch(N8N_WEBHOOK_URL, {
+      const response = await fetch(webhookUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -92,20 +104,30 @@ const Chat = () => {
     toast.success("Chat cleared");
   };
 
+  const handleWebhookUrlChange = (newUrl: string) => {
+    setWebhookUrl(newUrl);
+  };
+
   return (
     <Card className="flex h-[calc(100vh-2rem)] w-full flex-col overflow-hidden p-0 shadow-lg">
       {/* Chat header */}
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-lg font-semibold">Chat Assistant</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={clearChat}
-          disabled={messages.length === 0 || isLoading}
-          title="Clear chat"
-        >
-          <Trash2 className="h-5 w-5" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <SettingsDialog 
+            currentUrl={webhookUrl} 
+            onUrlChange={handleWebhookUrlChange} 
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={clearChat}
+            disabled={messages.length === 0 || isLoading}
+            title="Clear chat"
+          >
+            <Trash2 className="h-5 w-5" />
+          </Button>
+        </div>
       </div>
 
       {/* Messages area */}
