@@ -65,11 +65,25 @@ const Chat = () => {
 
       const data = await response.json();
       
+      // Parse the response based on its structure
+      let responseText = "Sorry, I couldn't process that request.";
+      
+      if (Array.isArray(data) && data.length > 0 && data[0].output) {
+        // Format: [{"output":"response text"}]
+        responseText = data[0].output;
+      } else if (data.response) {
+        // Format: {"response":"response text"}
+        responseText = data.response;
+      } else if (typeof data === "string") {
+        // Format: "response text"
+        responseText = data;
+      }
+      
       // Add assistant message
       const assistantMessage: MessageType = {
         id: uuidv4(),
         role: "assistant",
-        content: data.response || "Sorry, I couldn't process that request.",
+        content: responseText,
         timestamp: new Date(),
       };
 
