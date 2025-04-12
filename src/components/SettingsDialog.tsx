@@ -24,6 +24,8 @@ interface SettingsDialogProps {
 const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
   const [open, setOpen] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState("");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -32,9 +34,20 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
     },
   });
 
+  const resetTestStatus = () => {
+    setTestStatus('idle');
+    setTestMessage("");
+  };
+
   const testConnection = async (url: string) => {
+    resetTestStatus();
     setIsTesting(true);
+    
     try {
+      // Add a timeout to the fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -43,19 +56,44 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
         body: JSON.stringify({
           message: "Connection test",
         }),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (response.ok) {
+        setTestStatus('success');
+        setTestMessage("Connection successful!");
         toast.success("Connection successful!");
         return true;
       } else {
         const data = await response.json();
-        toast.error(`Connection failed: ${data.message || response.statusText}`);
+        const errorMessage = `Connection failed: ${data.message || response.statusText}`;
+        setTestStatus('error');
+        setTestMessage(errorMessage);
+        toast.error(errorMessage);
         return false;
       }
     } catch (error) {
       console.error("Connection test error:", error);
-      toast.error("Connection failed. Check the URL and try again.");
+      
+      let errorMessage = "Connection failed. ";
+      
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          errorMessage += "Request timed out. The server may be down or unreachable.";
+        } else if (error.message === "Failed to fetch") {
+          errorMessage += "Network error occurred. This may be due to CORS restrictions or the server is unreachable.";
+        } else {
+          errorMessage += error.message;
+        }
+      } else {
+        errorMessage += "An unknown error occurred. Check the URL and try again.";
+      }
+      
+      setTestStatus('error');
+      setTestMessage(errorMessage);
+      toast.error(errorMessage);
       return false;
     } finally {
       setIsTesting(false);
@@ -63,12 +101,15 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
   };
 
   const onSubmit = async (values: FormValues) => {
-    const connectionSuccessful = await testConnection(values.webhookUrl);
-    if (connectionSuccessful) {
-      onUrlChange(values.webhookUrl);
-      setOpen(false);
-      toast.success("Webhook URL updated successfully");
-    }
+    // Save the URL even without testing in this environment
+    onUrlChange(values.webhookUrl);
+    setOpen(false);
+    toast.success("Webhook URL updated successfully");
+    
+    // Optional: You can still attempt to test
+    testConnection(values.webhookUrl).catch(() => {
+      // Silently handle any test errors after saving
+    });
   };
 
   return (
@@ -76,13 +117,21 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
       <Button
         variant="ghost"
         size="icon"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setOpen(true);
+          resetTestStatus();
+        }}
         title="Settings"
       >
         <Settings className="h-5 w-5" />
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (isOpen) {
+          resetTestStatus();
+        }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Webhook Settings</DialogTitle>
@@ -100,12 +149,32 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
                   <FormItem>
                     <FormLabel>Webhook URL</FormLabel>
                     <FormControl>
-                      <Input placeholder="https://..." {...field} />
+                      <Input 
+                        placeholder="https://..." 
+                        {...field} 
+                        onChange={(e) => {
+                          field.onChange(e);
+                          resetTestStatus();
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+
+              {testStatus !== 'idle' && (
+                <div className={`p-3 rounded-md flex items-start gap-2 ${
+                  testStatus === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+                }`}>
+                  {testStatus === 'success' ? (
+                    <Check className="h-5 w-5 text-green-600 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                  )}
+                  <p className="text-sm">{testMessage}</p>
+                </div>
+              )}
 
               <DialogFooter>
                 <Button
@@ -128,7 +197,10 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
                     </>
                   )}
                 </Button>
-                <Button type="submit" disabled={isTesting || !form.formState.isDirty}>
+                <Button 
+                  type="submit" 
+                  disabled={isTesting || (!form.formState.isDirty && testStatus !== 'success')}
+                >
                   Save Changes
                 </Button>
               </DialogFooter>
