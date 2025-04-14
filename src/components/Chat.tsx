@@ -123,9 +123,9 @@ const Chat = () => {
   };
 
   return (
-    <Card className="flex h-[calc(100vh-2rem)] w-full flex-col overflow-hidden p-0 shadow-lg">
+    <Card className="flex h-full w-full flex-col overflow-hidden p-0 shadow-lg">
       {/* Chat header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex items-center justify-between border-b px-4 py-2">
         <h2 className="text-lg font-semibold">Chat Assistant</h2>
         <div className="flex items-center gap-2">
           <SettingsDialog 
@@ -182,14 +182,14 @@ const Chat = () => {
       </div>
 
       {/* Input area */}
-      <div className="border-t p-4">
+      <div className="border-t p-3">
         <div className="flex gap-2">
           <Textarea
             placeholder="Type your message here..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="min-h-[60px] resize-none"
+            className="min-h-[50px] max-h-[100px] resize-none"
             disabled={isLoading}
           />
           <Button
