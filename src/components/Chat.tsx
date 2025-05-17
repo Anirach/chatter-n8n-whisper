@@ -49,6 +49,11 @@ const Chat = () => {
     setIsLoading(true);
 
     try {
+      console.log("Sending message to:", webhookUrl);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
       const response = await fetch(webhookUrl, {
         method: "POST",
         headers: {
@@ -57,56 +62,73 @@ const Chat = () => {
         body: JSON.stringify({
           message: input.trim(),
         }),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Error: ${response.status}`);
+        throw new Error(`Error: ${response.status} - ${response.statusText}`);
       }
 
       // Check if there's content in the response before parsing JSON
       const responseText = await response.text();
+      console.log("Raw response:", responseText);
       
       // Handle empty responses
       if (!responseText || responseText.trim() === '') {
+        console.log("Empty response received");
         throw new Error("Empty response received from the server");
       }
       
-      let responseData;
+      let responseContent: string;
+      
+      // Try parsing the response as JSON
       try {
-        // Try to parse the JSON text
-        responseData = JSON.parse(responseText);
+        // First, attempt to parse the JSON text
+        const responseData = JSON.parse(responseText);
+        console.log("Parsed response data:", responseData);
+        
+        // Extract content from various possible response formats
+        if (Array.isArray(responseData)) {
+          // Handle array response
+          if (responseData.length > 0) {
+            const firstItem = responseData[0];
+            if (typeof firstItem === 'string') {
+              responseContent = firstItem;
+            } else if (firstItem && typeof firstItem === 'object') {
+              responseContent = firstItem.output || firstItem.response || firstItem.message || firstItem.text || 
+                                firstItem.content || firstItem.answer || JSON.stringify(firstItem);
+            } else {
+              responseContent = JSON.stringify(responseData);
+            }
+          } else {
+            responseContent = "Received an empty array response";
+          }
+        } else if (responseData && typeof responseData === 'object') {
+          // Handle object response
+          responseContent = responseData.output || responseData.response || responseData.message || 
+                           responseData.text || responseData.content || responseData.answer || 
+                           JSON.stringify(responseData);
+        } else if (typeof responseData === 'string') {
+          // Handle string response
+          responseContent = responseData;
+        } else {
+          // Fallback
+          responseContent = JSON.stringify(responseData);
+        }
       } catch (parseError) {
-        console.error("JSON parse error:", parseError);
+        console.log("Failed to parse JSON, using raw text:", parseError);
         // If it's not valid JSON, use the raw text as the response
-        responseData = responseText;
+        responseContent = responseText;
       }
       
-      // Parse the response based on its structure
-      let responseContent = "Sorry, I couldn't process that request.";
-      
-      if (Array.isArray(responseData) && responseData.length > 0) {
-        if (responseData[0].output) {
-          // Format: [{"output":"response text"}]
-          responseContent = responseData[0].output;
-        } else if (responseData[0].response) {
-          // Format: [{"response":"response text"}]
-          responseContent = responseData[0].response;
-        } else if (typeof responseData[0] === 'string') {
-          // Format: ["response text"]
-          responseContent = responseData[0];
-        }
-      } else if (typeof responseData === 'object' && responseData !== null) {
-        if (responseData.output) {
-          // Format: {"output":"response text"}
-          responseContent = responseData.output;
-        } else if (responseData.response) {
-          // Format: {"response":"response text"}
-          responseContent = responseData.response;
-        }
-      } else if (typeof responseData === "string") {
-        // Format: "response text"
-        responseContent = responseData;
+      // If we still don't have a valid response content, throw an error
+      if (!responseContent || responseContent === "undefined" || responseContent === "null") {
+        throw new Error("Could not extract a valid response from the server");
       }
+      
+      console.log("Final extracted response content:", responseContent);
       
       // Add assistant message
       const assistantMessage: MessageType = {
@@ -119,17 +141,30 @@ const Chat = () => {
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error sending message:", error);
-      toast.error("Failed to get a response. Please check your webhook URL or try again later.");
+      
+      let errorMessage = "Sorry, I encountered an error processing your request. ";
+      
+      if (error instanceof Error) {
+        if (error.name === "AbortError") {
+          errorMessage += "The request timed out. Please check if the server is responding.";
+        } else if (error.message === "Failed to fetch") {
+          errorMessage += "Could not connect to the webhook. Please check your network connection or webhook URL.";
+        } else {
+          errorMessage += error.message;
+        }
+      }
+      
+      toast.error(errorMessage);
       
       // Add error message as assistant
-      const errorMessage: MessageType = {
+      const errorResponseMessage: MessageType = {
         id: uuidv4(),
         role: "assistant",
-        content: "Sorry, I encountered an error processing your request. Please check your webhook URL or try again later.",
+        content: errorMessage,
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [...prev, errorResponseMessage]);
     } finally {
       setIsLoading(false);
     }

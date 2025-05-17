@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,8 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
     setIsTesting(true);
     
     try {
+      console.log("Testing connection to:", url);
+      
       // Add a timeout to the fetch request
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -60,25 +63,33 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
       
       clearTimeout(timeoutId);
       
-      // Check if response is ok before trying to parse json
+      // Log the raw response before processing
+      const responseText = await response.text();
+      console.log("Test connection raw response:", responseText);
+      
+      // Check if response is ok
       if (response.ok) {
-        try {
-          // Try to get response as text first
-          const responseText = await response.text();
-          
-          // If we got a response (even empty), consider it successful
+        // Try to parse response if it exists
+        if (responseText && responseText.trim() !== '') {
+          try {
+            // Try to parse as JSON
+            JSON.parse(responseText);
+            setTestStatus('success');
+            setTestMessage("Connection successful! Response format looks good.");
+          } catch (parseError) {
+            // Not JSON but we got a response
+            console.log("Response is not JSON:", parseError);
+            setTestStatus('success');
+            setTestMessage("Connection successful, but response is not in JSON format.");
+          }
+        } else {
+          // Empty but successful response
           setTestStatus('success');
-          setTestMessage("Connection successful!");
-          toast.success("Connection successful!");
-          return true;
-        } catch (parseError) {
-          console.error("Error parsing response:", parseError);
-          // Even if we can't parse the response, if status was ok, consider it a success
-          setTestStatus('success');
-          setTestMessage("Connection successful, but response format may not be ideal.");
-          toast.success("Connection successful!");
-          return true;
+          setTestMessage("Connection successful! Server responded with an empty response.");
         }
+        
+        toast.success("Connection successful!");
+        return true;
       } else {
         const errorMessage = `Connection failed: HTTP ${response.status} - ${response.statusText}`;
         setTestStatus('error');
