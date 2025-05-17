@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -60,15 +59,28 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
       });
       
       clearTimeout(timeoutId);
-
+      
+      // Check if response is ok before trying to parse json
       if (response.ok) {
-        setTestStatus('success');
-        setTestMessage("Connection successful!");
-        toast.success("Connection successful!");
-        return true;
+        try {
+          // Try to get response as text first
+          const responseText = await response.text();
+          
+          // If we got a response (even empty), consider it successful
+          setTestStatus('success');
+          setTestMessage("Connection successful!");
+          toast.success("Connection successful!");
+          return true;
+        } catch (parseError) {
+          console.error("Error parsing response:", parseError);
+          // Even if we can't parse the response, if status was ok, consider it a success
+          setTestStatus('success');
+          setTestMessage("Connection successful, but response format may not be ideal.");
+          toast.success("Connection successful!");
+          return true;
+        }
       } else {
-        const data = await response.json();
-        const errorMessage = `Connection failed: ${data.message || response.statusText}`;
+        const errorMessage = `Connection failed: HTTP ${response.status} - ${response.statusText}`;
         setTestStatus('error');
         setTestMessage(errorMessage);
         toast.error(errorMessage);

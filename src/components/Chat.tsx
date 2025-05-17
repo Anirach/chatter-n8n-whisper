@@ -63,40 +63,69 @@ const Chat = () => {
         throw new Error(`Error: ${response.status}`);
       }
 
-      const data = await response.json();
+      // Check if there's content in the response before parsing JSON
+      const responseText = await response.text();
+      
+      // Handle empty responses
+      if (!responseText || responseText.trim() === '') {
+        throw new Error("Empty response received from the server");
+      }
+      
+      let responseData;
+      try {
+        // Try to parse the JSON text
+        responseData = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("JSON parse error:", parseError);
+        // If it's not valid JSON, use the raw text as the response
+        responseData = responseText;
+      }
       
       // Parse the response based on its structure
-      let responseText = "Sorry, I couldn't process that request.";
+      let responseContent = "Sorry, I couldn't process that request.";
       
-      if (Array.isArray(data) && data.length > 0 && data[0].output) {
-        // Format: [{"output":"response text"}]
-        responseText = data[0].output;
-      } else if (data.response) {
-        // Format: {"response":"response text"}
-        responseText = data.response;
-      } else if (typeof data === "string") {
+      if (Array.isArray(responseData) && responseData.length > 0) {
+        if (responseData[0].output) {
+          // Format: [{"output":"response text"}]
+          responseContent = responseData[0].output;
+        } else if (responseData[0].response) {
+          // Format: [{"response":"response text"}]
+          responseContent = responseData[0].response;
+        } else if (typeof responseData[0] === 'string') {
+          // Format: ["response text"]
+          responseContent = responseData[0];
+        }
+      } else if (typeof responseData === 'object' && responseData !== null) {
+        if (responseData.output) {
+          // Format: {"output":"response text"}
+          responseContent = responseData.output;
+        } else if (responseData.response) {
+          // Format: {"response":"response text"}
+          responseContent = responseData.response;
+        }
+      } else if (typeof responseData === "string") {
         // Format: "response text"
-        responseText = data;
+        responseContent = responseData;
       }
       
       // Add assistant message
       const assistantMessage: MessageType = {
         id: uuidv4(),
         role: "assistant",
-        content: responseText,
+        content: responseContent,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error sending message:", error);
-      toast.error("Failed to get a response. Please try again later.");
+      toast.error("Failed to get a response. Please check your webhook URL or try again later.");
       
       // Add error message as assistant
       const errorMessage: MessageType = {
         id: uuidv4(),
         role: "assistant",
-        content: "Sorry, I encountered an error processing your request. Please try again later.",
+        content: "Sorry, I encountered an error processing your request. Please check your webhook URL or try again later.",
         timestamp: new Date(),
       };
 
