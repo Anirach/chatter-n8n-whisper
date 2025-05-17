@@ -11,6 +11,8 @@ import SettingsDialog from "@/components/SettingsDialog";
 
 // Default webhook URL
 const DEFAULT_WEBHOOK_URL = "https://n8n.opensource-technology.com/webhook-test/6b89a398-7b90-4bc3-80c1-8401dc8a5c40";
+// Increase timeout to 30 seconds since some LLM responses can be slow
+const REQUEST_TIMEOUT = 30000;
 
 const Chat = () => {
   const [messages, setMessages] = useState<MessageType[]>([]);
@@ -51,94 +53,99 @@ const Chat = () => {
     try {
       console.log("Sending message to:", webhookUrl);
       
+      // Create an AbortController with increased timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
       
-      const response = await fetch(webhookUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: input.trim(),
-        }),
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Error: ${response.status} - ${response.statusText}`);
-      }
-
-      // Check if there's content in the response before parsing JSON
-      const responseText = await response.text();
-      console.log("Raw response:", responseText);
-      
-      // Handle empty responses
-      if (!responseText || responseText.trim() === '') {
-        console.log("Empty response received");
-        throw new Error("Empty response received from the server");
-      }
-      
-      let responseContent: string;
-      
-      // Try parsing the response as JSON
       try {
-        // First, attempt to parse the JSON text
-        const responseData = JSON.parse(responseText);
-        console.log("Parsed response data:", responseData);
+        const response = await fetch(webhookUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: input.trim(),
+          }),
+          signal: controller.signal,
+        });
         
-        // Extract content from various possible response formats
-        if (Array.isArray(responseData)) {
-          // Handle array response
-          if (responseData.length > 0) {
-            const firstItem = responseData[0];
-            if (typeof firstItem === 'string') {
-              responseContent = firstItem;
-            } else if (firstItem && typeof firstItem === 'object') {
-              responseContent = firstItem.output || firstItem.response || firstItem.message || firstItem.text || 
-                                firstItem.content || firstItem.answer || JSON.stringify(firstItem);
-            } else {
-              responseContent = JSON.stringify(responseData);
-            }
-          } else {
-            responseContent = "Received an empty array response";
-          }
-        } else if (responseData && typeof responseData === 'object') {
-          // Handle object response
-          responseContent = responseData.output || responseData.response || responseData.message || 
-                           responseData.text || responseData.content || responseData.answer || 
-                           JSON.stringify(responseData);
-        } else if (typeof responseData === 'string') {
-          // Handle string response
-          responseContent = responseData;
-        } else {
-          // Fallback
-          responseContent = JSON.stringify(responseData);
+        clearTimeout(timeoutId);
+  
+        if (!response.ok) {
+          throw new Error(`Error: ${response.status} - ${response.statusText}`);
         }
-      } catch (parseError) {
-        console.log("Failed to parse JSON, using raw text:", parseError);
-        // If it's not valid JSON, use the raw text as the response
-        responseContent = responseText;
+  
+        // Check if there's content in the response before parsing
+        const responseText = await response.text();
+        console.log("Raw response:", responseText);
+        
+        if (!responseText || responseText.trim() === '') {
+          console.log("Empty response received");
+          throw new Error("Empty response received from the server");
+        }
+        
+        let responseContent: string;
+        
+        try {
+          // First, attempt to parse the JSON text
+          const responseData = JSON.parse(responseText);
+          console.log("Parsed response data:", responseData);
+          
+          // Extract content from various possible response formats
+          if (Array.isArray(responseData)) {
+            // Handle array response
+            if (responseData.length > 0) {
+              const firstItem = responseData[0];
+              if (typeof firstItem === 'string') {
+                responseContent = firstItem;
+              } else if (firstItem && typeof firstItem === 'object') {
+                responseContent = firstItem.output || firstItem.response || firstItem.message || 
+                                  firstItem.text || firstItem.content || firstItem.answer || 
+                                  JSON.stringify(firstItem);
+              } else {
+                responseContent = JSON.stringify(responseData);
+              }
+            } else {
+              responseContent = "Received an empty array response";
+            }
+          } else if (responseData && typeof responseData === 'object') {
+            // Handle object response
+            responseContent = responseData.output || responseData.response || responseData.message || 
+                             responseData.text || responseData.content || responseData.answer || 
+                             JSON.stringify(responseData);
+          } else if (typeof responseData === 'string') {
+            // Handle string response
+            responseContent = responseData;
+          } else {
+            // Fallback
+            responseContent = JSON.stringify(responseData);
+          }
+        } catch (parseError) {
+          console.log("Failed to parse JSON, using raw text:", parseError);
+          // If it's not valid JSON, use the raw text as the response
+          responseContent = responseText;
+        }
+        
+        // If we still don't have a valid response content, throw an error
+        if (!responseContent || responseContent === "undefined" || responseContent === "null") {
+          throw new Error("Could not extract a valid response from the server");
+        }
+        
+        console.log("Final extracted response content:", responseContent);
+        
+        // Add assistant message
+        const assistantMessage: MessageType = {
+          id: uuidv4(),
+          role: "assistant",
+          content: responseContent,
+          timestamp: new Date(),
+        };
+  
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
       }
-      
-      // If we still don't have a valid response content, throw an error
-      if (!responseContent || responseContent === "undefined" || responseContent === "null") {
-        throw new Error("Could not extract a valid response from the server");
-      }
-      
-      console.log("Final extracted response content:", responseContent);
-      
-      // Add assistant message
-      const assistantMessage: MessageType = {
-        id: uuidv4(),
-        role: "assistant",
-        content: responseContent,
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error sending message:", error);
       
@@ -146,7 +153,7 @@ const Chat = () => {
       
       if (error instanceof Error) {
         if (error.name === "AbortError") {
-          errorMessage += "The request timed out. Please check if the server is responding.";
+          errorMessage += "The request timed out. The server may be busy or the model is taking too long to generate a response. Try again or use a different webhook.";
         } else if (error.message === "Failed to fetch") {
           errorMessage += "Could not connect to the webhook. Please check your network connection or webhook URL.";
         } else {

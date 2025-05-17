@@ -46,56 +46,67 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
     try {
       console.log("Testing connection to:", url);
       
-      // Add a timeout to the fetch request
+      // Add a longer timeout to the fetch request (20 seconds)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
       
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: "Connection test",
-        }),
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      // Log the raw response before processing
-      const responseText = await response.text();
-      console.log("Test connection raw response:", responseText);
-      
-      // Check if response is ok
-      if (response.ok) {
-        // Try to parse response if it exists
-        if (responseText && responseText.trim() !== '') {
-          try {
-            // Try to parse as JSON
-            JSON.parse(responseText);
-            setTestStatus('success');
-            setTestMessage("Connection successful! Response format looks good.");
-          } catch (parseError) {
-            // Not JSON but we got a response
-            console.log("Response is not JSON:", parseError);
-            setTestStatus('success');
-            setTestMessage("Connection successful, but response is not in JSON format.");
-          }
-        } else {
-          // Empty but successful response
-          setTestStatus('success');
-          setTestMessage("Connection successful! Server responded with an empty response.");
-        }
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: "Connection test",
+          }),
+          signal: controller.signal,
+        });
         
-        toast.success("Connection successful!");
-        return true;
-      } else {
-        const errorMessage = `Connection failed: HTTP ${response.status} - ${response.statusText}`;
-        setTestStatus('error');
-        setTestMessage(errorMessage);
-        toast.error(errorMessage);
-        return false;
+        clearTimeout(timeoutId);
+        
+        // Log the raw response before processing
+        const responseText = await response.text();
+        console.log("Test connection raw response:", responseText);
+        
+        // Check if response is ok
+        if (response.ok) {
+          // Try to parse response if it exists
+          if (responseText && responseText.trim() !== '') {
+            try {
+              // Try to parse as JSON
+              const jsonResponse = JSON.parse(responseText);
+              
+              // Check if we get an expected response format
+              const isValidFormat = 
+                (Array.isArray(jsonResponse) && jsonResponse.length > 0) ||
+                (typeof jsonResponse === 'object' && jsonResponse !== null);
+              
+              setTestStatus('success');
+              setTestMessage(`Connection successful! ${isValidFormat ? 'Response format looks good.' : 'Response is in JSON format.'}`);
+            } catch (parseError) {
+              // Not JSON but we got a response
+              console.log("Response is not JSON:", parseError);
+              setTestStatus('success');
+              setTestMessage("Connection successful, but response is not in JSON format.");
+            }
+          } else {
+            // Empty but successful response
+            setTestStatus('success');
+            setTestMessage("Connection successful! Server responded with an empty response.");
+          }
+          
+          toast.success("Connection successful!");
+          return true;
+        } else {
+          const errorMessage = `Connection failed: HTTP ${response.status} - ${response.statusText}`;
+          setTestStatus('error');
+          setTestMessage(errorMessage);
+          toast.error(errorMessage);
+          return false;
+        }
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
       }
     } catch (error) {
       console.error("Connection test error:", error);
@@ -104,9 +115,9 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
       
       if (error instanceof Error) {
         if (error.name === "AbortError") {
-          errorMessage += "Request timed out. The server may be down or unreachable.";
+          errorMessage += "Request timed out after 20 seconds. The server may be busy or experiencing high load.";
         } else if (error.message === "Failed to fetch") {
-          errorMessage += "Network error occurred. This may be due to CORS restrictions or the server is unreachable.";
+          errorMessage += "Network error occurred. This may be due to CORS restrictions, incorrect URL format, or the server is unreachable.";
         } else {
           errorMessage += error.message;
         }
