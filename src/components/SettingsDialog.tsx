@@ -46,11 +46,15 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
     try {
       console.log("Testing connection to:", url);
       
-      // Add a longer timeout to the fetch request (20 seconds)
+      // Increase timeout to match Chat component (60 seconds)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const timeoutId = setTimeout(() => {
+        console.log("Connection test timed out after 60 seconds");
+        controller.abort();
+      }, 60000);
       
       try {
+        const startTime = Date.now();
         const response = await fetch(url, {
           method: "POST",
           headers: {
@@ -61,6 +65,10 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
           }),
           signal: controller.signal,
         });
+        
+        const endTime = Date.now();
+        const testDuration = endTime - startTime;
+        console.log("Connection test completed in", testDuration, "ms");
         
         clearTimeout(timeoutId);
         
@@ -82,17 +90,17 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
                 (typeof jsonResponse === 'object' && jsonResponse !== null);
               
               setTestStatus('success');
-              setTestMessage(`Connection successful! ${isValidFormat ? 'Response format looks good.' : 'Response is in JSON format.'}`);
+              setTestMessage(`Connection successful! Response time: ${testDuration}ms. ${isValidFormat ? 'Response format looks good.' : 'Response is in JSON format.'}`);
             } catch (parseError) {
               // Not JSON but we got a response
               console.log("Response is not JSON:", parseError);
               setTestStatus('success');
-              setTestMessage("Connection successful, but response is not in JSON format.");
+              setTestMessage(`Connection successful! Response time: ${testDuration}ms. Response is not in JSON format.`);
             }
           } else {
             // Empty but successful response
             setTestStatus('success');
-            setTestMessage("Connection successful! Server responded with an empty response.");
+            setTestMessage(`Connection successful! Response time: ${testDuration}ms. Server responded with an empty response.`);
           }
           
           toast.success("Connection successful!");
@@ -115,7 +123,7 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
       
       if (error instanceof Error) {
         if (error.name === "AbortError") {
-          errorMessage += "Request timed out after 20 seconds. The server may be busy or experiencing high load.";
+          errorMessage += "Request timed out after 60 seconds. The server may be busy or experiencing high load.";
         } else if (error.message === "Failed to fetch") {
           errorMessage += "Network error occurred. This may be due to CORS restrictions, incorrect URL format, or the server is unreachable.";
         } else {
@@ -170,7 +178,7 @@ const SettingsDialog = ({ currentUrl, onUrlChange }: SettingsDialogProps) => {
           <DialogHeader>
             <DialogTitle>Webhook Settings</DialogTitle>
             <DialogDescription>
-              Configure the webhook URL for your chat assistant.
+              Configure the webhook URL for your chat assistant. Timeout is set to 60 seconds.
             </DialogDescription>
           </DialogHeader>
 

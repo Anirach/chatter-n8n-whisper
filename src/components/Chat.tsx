@@ -11,8 +11,8 @@ import SettingsDialog from "@/components/SettingsDialog";
 
 // Default webhook URL
 const DEFAULT_WEBHOOK_URL = "https://n8n.opensource-technology.com/webhook-test/6b89a398-7b90-4bc3-80c1-8401dc8a5c40";
-// Increase timeout to 30 seconds since some LLM responses can be slow
-const REQUEST_TIMEOUT = 30000;
+// Increase timeout to 60 seconds for slower LLM responses
+const REQUEST_TIMEOUT = 60000;
 
 const Chat = () => {
   const [messages, setMessages] = useState<MessageType[]>([]);
@@ -47,32 +47,42 @@ const Chat = () => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = input.trim();
     setInput("");
     setIsLoading(true);
 
     try {
       console.log("Sending message to:", webhookUrl);
+      console.log("Request timeout set to:", REQUEST_TIMEOUT, "ms");
       
       // Create an AbortController with increased timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+      const timeoutId = setTimeout(() => {
+        console.log("Request timed out after", REQUEST_TIMEOUT, "ms");
+        controller.abort();
+      }, REQUEST_TIMEOUT);
       
       try {
+        const startTime = Date.now();
         const response = await fetch(webhookUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            message: input.trim(),
+            message: currentInput,
           }),
           signal: controller.signal,
         });
         
+        const endTime = Date.now();
+        const requestDuration = endTime - startTime;
+        console.log("Request completed in", requestDuration, "ms");
+        
         clearTimeout(timeoutId);
   
         if (!response.ok) {
-          throw new Error(`Error: ${response.status} - ${response.statusText}`);
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
   
         // Check if there's content in the response before parsing
@@ -153,12 +163,16 @@ const Chat = () => {
       
       if (error instanceof Error) {
         if (error.name === "AbortError") {
-          errorMessage += "The request timed out. The server may be busy or the model is taking too long to generate a response. Try again or use a different webhook.";
+          errorMessage += `The request timed out after ${REQUEST_TIMEOUT / 1000} seconds. The server may be busy or the model is taking too long to generate a response. Try again or use a different webhook.`;
         } else if (error.message === "Failed to fetch") {
-          errorMessage += "Could not connect to the webhook. Please check your network connection or webhook URL.";
+          errorMessage += "Could not connect to the webhook. Please check your network connection and webhook URL in settings.";
+        } else if (error.message.includes("HTTP")) {
+          errorMessage += `Server error: ${error.message}. Please check if the webhook URL is correct and the server is running.`;
         } else {
           errorMessage += error.message;
         }
+      } else {
+        errorMessage += "An unknown error occurred. Please try again.";
       }
       
       toast.error(errorMessage);
